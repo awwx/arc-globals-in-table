@@ -9,6 +9,12 @@
 (require (lib "foreign.ss"))
 (unsafe!)
 
+(define globals (make-parameter #f))
+
+(define (arc-compile s globals-value)
+  (parameterize ((globals globals-value))
+    (ac s '())))
+
 ; compile an Arc expression into a Scheme expression,
 ; both represented as s-expressions.
 ; env is a list of lexically bound variables, which we
@@ -209,13 +215,13 @@
                  acc
                  keepsep?))))
 
-(define (ac-global-name s)
-  (string->symbol (string-append "_" (symbol->string s))))
-
 (define (ac-var-ref s env)
-  (if (lex? s env)
-      s
-      (ac-global-name s)))
+  (cond ((lex? s env)
+         s)
+        ((eq? s 'globals)
+         (globals))
+        (#t
+         `(ar-funcall1 ,(globals) ',s))))
 
 ; quasiquote
 
@@ -399,8 +405,7 @@
                (cond ((eqv? a 'nil) (err "Can't rebind nil"))
                      ((eqv? a 't) (err "Can't rebind t"))
                      ((lex? a env) `(set! ,a zz))
-                     (#t `(namespace-set-variable-value! ',(ac-global-name a)
-                                                         zz)))
+                     (#t `(ar-funcall3 ,sref ,(globals) zz ',a)))
                'zz))
       (err "First arg to set must be a symbol" a)))
 
@@ -432,7 +437,7 @@
   (cond ((and (assoc fn ac-binaries) (= (length args) 2))
          `(,(cadr (assoc fn ac-binaries)) ,@(ac-args '() args env)))
         (#t
-         `(,(ac-global-name fn) ,@(ac-args '() args env)))))
+         `(,(ar-funcall1 (globals) fn) ,@(ac-args '() args env)))))
 
 ; compile a function call
 ; special cases for speed, to avoid compiled output like
@@ -445,14 +450,17 @@
 
 (define direct-calls #f)
 
+(define (ac-bound? arcname)
+  (not (eq? (ar-funcall1 (globals) arcname) 'nil)))
+
 (define (ac-call fn args env)
   (let ((macfn (ac-macro? fn)))
     (cond (macfn
            (ac-mac-call macfn args env))
           ((and (pair? fn) (eqv? (car fn) 'fn))
            `(,(ac fn env) ,@(ac-args (cadr fn) args env)))
-          ((and direct-calls (symbol? fn) (not (lex? fn env)) (bound? fn)
-                (procedure? (namespace-variable-value (ac-global-name fn))))
+          ((and direct-calls (symbol? fn) (not (lex? fn env)) (ac-bound? fn)
+                (procedure? (ar-funcall1 (globals) fn)))
            (ac-global-call fn args env))
           ((= (length args) 0)
            `(ar-funcall0 ,(ac fn env) ,@(map (lambda (x) (ac x env)) args)))
@@ -477,10 +485,8 @@
 
 (define (ac-macro? fn)
   (if (symbol? fn)
-      (let ((v (namespace-variable-value (ac-global-name fn)
-                                         #t
-                                         (lambda () #f))))
-        (if (and v
+      (let ((v (ar-funcall1 (globals) fn)))
+        (if (and (not (eq? v 'nil))
                  (ar-tagged? v)
                  (eq? (ar-type v) 'mac))
             (ar-rep v)
@@ -566,6 +572,8 @@
 
 ; run-time primitive procedures
 
+(define ar-globals (make-hash-table 'equal))
+
 ;(define (xdef a b)
 ;  (namespace-set-variable-value! (ac-global-name a) b)
 ;  b)
@@ -573,9 +581,9 @@
 (define-syntax xdef
   (syntax-rules ()
     ((xxdef a b)
-     (let ((nm (ac-global-name 'a))
+     (let ((nm 'a)
            (a b))
-       (namespace-set-variable-value! nm a)
+       (hash-table-put! ar-globals nm a)
        a))))
 
 (define fn-signatures (make-hash-table 'equal))
@@ -583,10 +591,10 @@
 ; This is a replacement for xdef that stores opeator signatures.
 ; Haven't started using it yet.
 
-(define (odef a parms b)
-  (namespace-set-variable-value! (ac-global-name a) b)
-  (hash-table-put! fn-signatures a (list parms))
-  b)
+; (define (odef a parms b)
+;   (namespace-set-variable-value! (ac-global-name a) b)
+;   (hash-table-put! fn-signatures a (list parms))
+;   b)
 
 (xdef sig fn-signatures)
 
@@ -1113,14 +1121,14 @@
 ; top level read-eval-print
 ; tle kept as a way to get a break loop when a scheme err
 
-(define (arc-eval expr)
-  (eval (ac expr '())))
+(define (arc-eval expr globals)
+  (eval (arc-compile expr globals)))
 
 (define (tle)
   (display "Arc> ")
   (let ((expr (read)))
     (when (not (eqv? expr ':a))
-      (write (arc-eval expr))
+      (write (arc-eval expr default-globals))
       (newline)
       (tle))))
 
@@ -1142,10 +1150,10 @@
       (let ((expr (read)))
         (if (eqv? expr ':a)
             'done
-            (let ((val (arc-eval expr)))
+            (let ((val (arc-eval expr default-globals)))
               (write (ac-denil val))
-              (namespace-set-variable-value! '_that val)
-              (namespace-set-variable-value! '_thatexpr expr)
+              (hash-table-put! default-globals '_that val)
+              (hash-table-put! default-globals '_thatexpr expr)
               (newline)
               (tl2)))))))
 
@@ -1154,7 +1162,7 @@
     (if (eof-object? x)
         #t
         (begin
-          (arc-eval x)
+          (arc-eval x default-globals)
           (aload1 p)))))
 
 (define (atests1 p)
@@ -1164,7 +1172,7 @@
         (begin
           (write x)
           (newline)
-          (let ((v (arc-eval x)))
+          (let ((v (arc-eval x default-globals)))
             (if (ar-false? v)
                 (begin
                   (display "  FAILED")
@@ -1204,8 +1212,8 @@
 
 (xdef macex1 (lambda (e) (ac-macex (ac-denil e) 'once)))
 
-(xdef eval (lambda (e)
-              (eval (ac (ac-denil e) '()))))
+(xdef ar-eval (lambda (e globals)
+                (eval (arc-compile (ac-denil e) globals))))
 
 ; If an err occurs in an on-err expr, no val is returned and code
 ; after it doesn't get executed.  Not quite what I had in mind.
@@ -1290,7 +1298,7 @@
 
 ; Later may want to have multiple indices.
 
-(xdef sref
+(define sref
   (lambda (com val ind)
     (cond ((hash-table? com)  (if (eqv? val 'nil)
                                   (hash-table-remove! com ind)
@@ -1299,18 +1307,12 @@
           ((pair? com)   (nth-set! com ind val))
           (#t (err "Can't set reference " com ind val)))
     val))
+(xdef sref sref)
 
 (define (nth-set! lst n val)
   (x-set-car! (list-tail lst n) val))
 
 ; rewrite to pass a (true) gensym instead of #f in case var bound to #f
-
-(define (bound? arcname)
-  (namespace-variable-value (ac-global-name arcname)
-                            #t
-                            (lambda () #f)))
-
-(xdef bound (lambda (x) (tnil (bound? x))))
 
 (xdef newstring make-string)
 
@@ -1484,5 +1486,9 @@
                                     (#t
                                      (cons (car cs) (unesc (cdr cs))))))))
                   (unesc (string->list s)))))
+
+(define default-globals (hash-table-copy ar-globals))
+
+(hash-table-put! default-globals 'ar-globals ar-globals)
 
 )

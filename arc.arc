@@ -27,7 +27,7 @@
 
 (assign safeset (annotate 'mac
                   (fn (var val)
-                    `(do (if (bound ',var)
+                    `(do (if ,var
                              (do (disp "*** redefining " (stderr))
                                  (disp ',var (stderr))
                                  (disp #\newline (stderr))))
@@ -1442,11 +1442,14 @@
        (pr ,@(parse-format str))))
 )
 
-(def load (file)
+(def eval (expr (o into globals))
+  (ar-eval expr into))
+
+(def load (file (o into globals))
   (w/infile f file
     (w/uniq eof
       (whiler e (read f eof) eof
-        (eval e)))))
+        (eval e into)))))
 
 (def positive (x)
   (and (number x) (> x 0)))
@@ -1607,6 +1610,9 @@
 (def get (index) [_ index])
 
 (= savers* (table))
+
+(def bound (name)
+  (isnt globals.name nil))
 
 (mac fromdisk (var file init load save)
   (w/uniq (gf gv)
