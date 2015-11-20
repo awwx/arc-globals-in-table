@@ -153,9 +153,8 @@ namespace to load the file into:
           (whiler e (read f eof) eof
             (eval e into)))))
 
-Similarly `bound` also needs to be moved into `arc.arc`, so that it
-knows which global namespace to look in to see if the variable is
-bound or not:
+Similarly `bound`, `macex`, and `macex1` also needs to be moved into
+`arc.arc`, so that they know which global namespace to use.
 
     (def bound (name)
       (isnt globals.name nil))
