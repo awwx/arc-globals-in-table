@@ -1208,9 +1208,12 @@
           (lambda (op)
             (acompile1 ip op)))))))
 
-(xdef macex (lambda (e) (ac-macex (ac-denil e))))
-
-(xdef macex1 (lambda (e) (ac-macex (ac-denil e) 'once)))
+(xdef ar-macex
+  (lambda (e globals-value once)
+    (parameterize ((globals globals-value))
+      (if (ar-false? once)
+           (ac-macex (ac-denil e))
+           (ac-macex (ac-denil e) 'once)))))
 
 (xdef ar-eval (lambda (e globals)
                 (eval (arc-compile (ac-denil e) globals))))

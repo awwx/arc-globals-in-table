@@ -323,6 +323,12 @@
   `(atomic (withs ,@args)))
 
 
+(def macex (e (o where globals))
+  (ar-macex e where nil))
+
+(def macex1 (e (o where globals))
+  (ar-macex e where t))
+
 ; setforms returns (vars get set) for a place based on car of an expr
 ;  vars is a list of gensyms alternating with expressions whose vals they
 ;   should be bound to, suitable for use as first arg to withs
