@@ -26,8 +26,8 @@ using `copy` to copy the table:
     arc> +
     #<procedure:+>
 
-If you want to "export" a variable from one namespace to another you
-can simply copy it:
+If you want to "export" a variable from one set of globals to another
+you can simply copy it:
 
     (= g!foo h!foo)
 
@@ -95,7 +95,7 @@ For example, a reference to a global variable `a` is compiled into
 (the globals value itself, not a variable referring to the globals
 value).
 
-Thus the only way to have code use a different globals namespace is to
+Thus the only way to have code use a different globals value is to
 compile it again, giving a different globals value to the compiler.
 
 In Arc code `globals` is compiled to the globals value, giving Arc
@@ -121,8 +121,8 @@ Note that globals isn't parameterized in the runtime; this is just
 for the convenience of the compiler.
 
 `eval` now needs to be implemented in `arc.arc`, so that it has a
-reference to the current globals to use as the default global
-namespace to eval in.
+reference to the current globals to use as the default globals value
+to eval in.
 
 In Arc<sub>3.1</sub> `eval` is implemented in the Scheme runtime:
 
@@ -145,7 +145,7 @@ And `eval` in `ac.scm` becomes `ar-eval`:
                     (eval (arc-compile (ac-denil e) globals))))
 
 `load` also takes the second optional parameter, the "globals"
-namespace to load the file into:
+value to load the file into:
 
     (def load (file (o into globals))
       (w/infile f file
@@ -154,7 +154,7 @@ namespace to load the file into:
             (eval e into)))))
 
 Similarly `bound`, `macex`, and `macex1` also needs to be moved into
-`arc.arc`, so that they know which global namespace to use.
+`arc.arc`, so that they know which globals value to use.
 
     (def bound (name)
       (isnt globals.name nil))
